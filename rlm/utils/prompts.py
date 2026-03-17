@@ -48,11 +48,34 @@ IMPORTANT: When you are done with the iterative process, you MUST provide a fina
 Think step by step carefully, plan, and execute this plan immediately in your response -- do not just say "I will do this" or "I will do that". Output to the REPL environment and recursive LLMs as much as possible. Remember to explicitly answer the original query in your final answer.
 """
 
-def build_system_prompt() -> list[Dict[str, str]]:
+CODEBASE_TOOLS_PROMPT = """
+If codebase tools are available, the REPL environment also exposes:
+- `codebase_tool_help()` to inspect availability and configured repo path
+- `index_repository(repo_path=None, mode="full")` to build or refresh the code graph
+- `search_graph(...)` for structural symbol search
+- `search_code(...)` for text search in indexed files
+- `trace_call_path(...)` to inspect callers/callees
+- `get_code_snippet(...)` to read code for a symbol
+- `get_architecture(...)` for a repository overview
+- `list_indexed_projects()` and `index_status(project=None)` to inspect index state
+
+When these are available, prefer them over manually scanning large repositories. A strong workflow is:
+1. Call `codebase_tool_help()` to confirm the backend is available.
+2. If needed, call `index_repository()`.
+3. Use `search_graph` or `search_code` to find the right symbol or file.
+4. Use `get_code_snippet` or `trace_call_path` to gather precise structure.
+5. Use `llm_query` only after you have narrowed the search space and want synthesis.
+"""
+
+
+def build_system_prompt(enable_codebase_tools: bool = False) -> list[Dict[str, str]]:
+    prompt = REPL_SYSTEM_PROMPT
+    if enable_codebase_tools:
+        prompt += "\n\n" + CODEBASE_TOOLS_PROMPT.strip()
     return [
         {
             "role": "system",
-            "content": REPL_SYSTEM_PROMPT
+            "content": prompt
         },
     ]
 

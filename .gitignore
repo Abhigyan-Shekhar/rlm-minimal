@@ -1,5 +1,7 @@
 .env
 *.DS_Store
+.tmp/
+intellidoc_analysis.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

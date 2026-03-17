@@ -1,3 +1,5 @@
 openai
-dotenv
+python-dotenv
+google-generativeai
 rich
+pytest

@@ -10,22 +10,25 @@ from dataclasses import dataclass
 from typing import Optional
 
 from rlm import RLM
+from rlm.code_tools import CodebaseMemoryClient
+from rlm.settings import load_settings
+
+SUB_QUERY_LIMIT_MESSAGE = (
+    "[ERROR] Maximum sub-query limit reached. You must produce your best final answer "
+    "without making more llm_query calls."
+)
 
 # Simple sub LM for REPL environment. Note: This could also be just the RLM itself!
 class Sub_RLM(RLM):
     """Recursive LLM client for REPL environment with fixed configuration."""
     
-    def __init__(self, model: str = "gpt-5"):
-        # Configuration - model can be specified
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
-        
+    def __init__(self, model: str = "gpt-5", provider: str = "openai"):
+        # Configuration - model and provider can be specified
+        from rlm.utils.llm import get_llm_client
         self.model = model
-
-        # Initialize OpenAI client
-        from rlm.utils.llm import OpenAIClient
-        self.client = OpenAIClient(api_key=self.api_key, model=model)
+        self.provider = provider
+        self.client = get_llm_client(provider=provider, model=model)
+        self.api_key = self.client.api_key
         
     
     def completion(self, prompt) -> str:
@@ -72,10 +75,16 @@ class REPLEnv:
     def __init__(
         self,
         recursive_model: str = "gpt-5-mini",
+        provider: str = "openai",
         context_json: Optional[dict | list] = None,
         context_str: Optional[str] = None,
         setup_code: str = None,
+        repo_path: Optional[str] = None,
+        codebase_memory_command: Optional[str] = None,
+        max_sub_queries: Optional[int] = None,
+        max_output_length: Optional[int] = None,
     ):
+        settings = load_settings()
         # Store the original working directory
         self.original_cwd = os.getcwd()
         
@@ -84,7 +93,16 @@ class REPLEnv:
 
 
         # Initialize minimal RLM / LM client. Change this to support more depths.
-        self.sub_rlm: RLM = Sub_RLM(model=recursive_model)
+        self.sub_rlm: RLM = Sub_RLM(model=recursive_model, provider=provider)
+        self.codebase_client = CodebaseMemoryClient(
+            command=codebase_memory_command,
+            repo_path=repo_path,
+        )
+        self.max_sub_queries = max_sub_queries or settings.max_sub_queries
+        self.max_output_length = max_output_length or settings.repl_truncate_len
+        self.sub_query_count = 0
+        self.sub_query_limit_hit_iteration: Optional[int] = None
+        self.current_root_iteration = 0
         
         # Create safe globals with only string-safe built-ins
         self.globals = {
@@ -168,10 +186,26 @@ class REPLEnv:
         
         def llm_query(prompt: str) -> str:
             """Query the LLM with the given prompt."""
+            if self.sub_query_count >= self.max_sub_queries:
+                if self.sub_query_limit_hit_iteration is None:
+                    self.sub_query_limit_hit_iteration = self.current_root_iteration
+                return SUB_QUERY_LIMIT_MESSAGE
+            self.sub_query_count += 1
             return self.sub_rlm.completion(prompt)
         
         # Add (R)LM query function to globals
         self.globals['llm_query'] = llm_query
+
+        # Add codebase-memory helper functions to globals
+        self.globals['codebase_tool_help'] = self.codebase_client.tool_help
+        self.globals['index_repository'] = self.codebase_client.index_repository
+        self.globals['search_graph'] = self.codebase_client.search_graph
+        self.globals['search_code'] = self.codebase_client.search_code
+        self.globals['trace_call_path'] = self.codebase_client.trace_call_path
+        self.globals['get_code_snippet'] = self.codebase_client.get_code_snippet
+        self.globals['get_architecture'] = self.codebase_client.get_architecture
+        self.globals['list_indexed_projects'] = self.codebase_client.list_projects
+        self.globals['index_status'] = self.codebase_client.index_status
         
         # Add FINAL_VAR function to globals
         def final_var(variable_name: str) -> str:
@@ -354,6 +388,14 @@ class REPLEnv:
         self.locals['_stderr'] = stderr_content
         
         return REPLResult(stdout_content, stderr_content, self.locals.copy(), execution_time)
+
+    def set_current_root_iteration(self, iteration: int) -> None:
+        self.current_root_iteration = iteration
+
+    def should_force_stop_for_sub_query_limit(self, iteration: int) -> bool:
+        if self.sub_query_limit_hit_iteration is None:
+            return False
+        return iteration - self.sub_query_limit_hit_iteration >= 2
     
     def get_cost_summary(self):
         raise NotImplementedError("Cost tracking is not implemented for the REPL Environment.")

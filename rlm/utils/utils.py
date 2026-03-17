@@ -130,7 +130,10 @@ def execute_code(repl_env, code: str, repl_env_logger, logger) -> str:
         result = repl_env.code_execution(code)
         
         formatted_result = format_execution_result(
-            result.stdout, result.stderr, result.locals
+            result.stdout,
+            result.stderr,
+            result.locals,
+            truncate_length=getattr(repl_env, "max_output_length", 100),
         )
         repl_env_logger.log_execution(code, result.stdout, result.stderr, result.execution_time)
         repl_env_logger.display_last()
