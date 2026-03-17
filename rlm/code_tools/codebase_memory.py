@@ -27,7 +27,11 @@ class CodebaseMemoryClient:
         repo_path: Optional[str] = None,
         timeout: int = 120,
     ):
-        self.command = command or os.getenv("CODEBASE_MEMORY_MCP_CMD") or self.DEFAULT_COMMAND
+        # Look for the binary in the local bin/ folder first
+        local_bin_path = Path(__file__).parent.parent.parent / "bin" / self.DEFAULT_COMMAND
+        default_cmd = str(local_bin_path) if local_bin_path.exists() else self.DEFAULT_COMMAND
+        
+        self.command = command or os.getenv("CODEBASE_MEMORY_MCP_CMD") or default_cmd
         self.repo_path = str(Path(repo_path).expanduser().resolve()) if repo_path else None
         self.timeout = timeout
 
