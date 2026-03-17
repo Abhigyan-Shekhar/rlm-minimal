@@ -2,6 +2,10 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _int_env(name: str, default: int) -> int:
     raw = os.getenv(name)
@@ -28,4 +32,3 @@ class RLMSettings:
 
 def load_settings() -> RLMSettings:
     return RLMSettings()
-

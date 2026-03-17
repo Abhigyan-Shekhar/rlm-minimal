@@ -18,6 +18,20 @@ def test_file_and_repo_commands_are_mutually_exclusive(tmp_path, capsys):
     assert cli.file_context is None
 
 
+def test_interactive_provider_and_model_commands_update_session_state(capsys):
+    parser = build_parser()
+    cli = RLMCLI(parser.parse_args([]))
+
+    cli._handle_command("/provider gemini")
+    cli._handle_command("/model gemini-2.5-flash")
+
+    captured = capsys.readouterr()
+    assert cli.args.provider == "gemini"
+    assert cli.args.model == "gemini-2.5-flash"
+    assert "Provider set to: gemini" in captured.out
+    assert "Model set to: gemini-2.5-flash" in captured.out
+
+
 def test_single_shot_returns_non_zero_on_model_failure(monkeypatch, tmp_path, capsys):
     sample = tmp_path / "sample.txt"
     sample.write_text("hello", encoding="utf-8")

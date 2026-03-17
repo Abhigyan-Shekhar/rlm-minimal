@@ -93,8 +93,24 @@ class RLMCLI:
         if command == "/help":
             print("/file <path>  load a plain-text file")
             print("/repo <path>  set repo-aware mode")
+            print("/provider <id> set the provider for this session")
+            print("/model <id>    set the root model for this session")
             print("/clear        clear current file/repo context")
             print("/quit         exit")
+            return None
+        if command == "/provider":
+            if len(parts) != 2:
+                print("Usage: /provider <id>", file=sys.stderr)
+                return None
+            self.args.provider = parts[1]
+            print(f"Provider set to: {self.args.provider}")
+            return None
+        if command == "/model":
+            if len(parts) != 2:
+                print("Usage: /model <id>", file=sys.stderr)
+                return None
+            self.args.model = parts[1]
+            print(f"Model set to: {self.args.model}")
             return None
         if command == "/quit":
             return 0
