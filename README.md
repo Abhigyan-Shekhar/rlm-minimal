@@ -16,8 +16,6 @@ This repo started from the minimal public RLM implementation and has been extend
 
 ![teaser](media/rlm.png)
 
-![teaser](media/rlm.png)
-
 ## Core Principle: Efficient Repository Understanding
 
 The primary goal of this implementation is to pair **Recursive Language Models (RLMs)** with **Repo-Aware Indexing (`codebase-memory-mcp`)**.
