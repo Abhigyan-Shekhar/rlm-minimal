@@ -54,7 +54,7 @@ class GeminiClient:
     Google Gemini client with the same interface as OpenAIClient.
 
     Requires:
-        - ``google-generativeai`` package  (pip install google-generativeai)
+        - ``google-genai`` package  (pip install google-genai)
         - ``GEMINI_API_KEY`` environment variable  (or pass api_key directly)
 
     Supported models (examples):
@@ -63,11 +63,11 @@ class GeminiClient:
 
     def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.0-flash"):
         try:
-            import google.generativeai as genai
+            import google.genai
         except ImportError:
             raise ImportError(
-                "google-generativeai is not installed. "
-                "Run: pip install google-generativeai"
+                "google-genai is not installed. "
+                "Run: pip install google-genai"
             )
 
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
@@ -78,8 +78,7 @@ class GeminiClient:
             )
 
         self.model = model
-        genai.configure(api_key=self.api_key)
-        self._genai = genai
+        self._client = google.genai.Client(api_key=self.api_key)
 
     def _to_gemini_messages(self, messages: "list[dict[str, str]] | str") -> tuple:
         """
@@ -146,28 +145,35 @@ class GeminiClient:
         **kwargs,
     ) -> str:
         try:
-            history, user_prompt, system_instruction = self._to_gemini_messages(messages)
-
-            client = self._genai.GenerativeModel(
-                self.model,
-                system_instruction=system_instruction
-            )
-
-            generation_config = {}
-            if max_tokens is not None:
-                generation_config["max_output_tokens"] = max_tokens
-
-            if history:
-                chat = client.start_chat(history=history)
-                response = chat.send_message(
-                    user_prompt,
-                    generation_config=generation_config or None,
-                )
+            if isinstance(messages, str):
+                # Simple string input
+                content = messages
+            elif isinstance(messages, dict):
+                content = messages.get("content", "")
             else:
-                response = client.generate_content(
-                    user_prompt,
-                    generation_config=generation_config or None,
-                )
+                # List of messages - extract user content
+                content_parts = []
+                for msg in messages:
+                    role = msg.get("role", "").lower()
+                    msg_content = msg.get("content", "")
+                    if msg_content:
+                        content_parts.append(msg_content)
+                content = "\n".join(content_parts) if content_parts else ""
+
+            if not content:
+                raise ValueError("No content to send to model")
+
+            # Prepare generation config
+            config_dict = {}
+            if max_tokens is not None:
+                config_dict["max_output_tokens"] = max_tokens
+
+            # Call the API with google-genai (simplified approach)
+            response = self._client.models.generate_content(
+                model=f"models/{self.model}",
+                contents=content,
+                config=config_dict if config_dict else None,
+            )
 
             return self._extract_text(response)
 

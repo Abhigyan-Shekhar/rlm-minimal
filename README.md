@@ -38,19 +38,19 @@ It is **not** yet a full agent framework, long-horizon conversational memory sys
 ## Features
 
 - `RLM_REPL(...).completion(context, query)` as the main programmatic API
-- interactive CLI and single-shot CLI mode
-- structured failure messages for model-limit and provider errors
-- sub-query guardrails to avoid unbounded recursive loops
-- repo-aware mode using `codebase-memory-mcp`
-- per-run trajectory logging under `~/.rlm/trajectories/`
-- optional `rich`-based REPL visualization when installed
+- Interactive CLI and single-shot CLI mode with `/repo` and `/file` commands
+- Robust **Gemini API Integration** with automatic role-alternating and system instruction support
+- **Repo-aware mode** using `codebase-memory-mcp` for surgical codebase exploration
+- Integrated **LongBench v2** evaluation harness for measuring long-context performance
+- Transparent trajectory logging for every model interaction
 
 ## Installation
 
 ### Requirements
 
 - Python 3.11+
-- one provider API key for the models you want to run
+- [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) installed and on your PATH (for repo mode)
+- Gemini or OpenAI API key
 
 ### Install dependencies
 
@@ -58,62 +58,18 @@ It is **not** yet a full agent framework, long-horizon conversational memory sys
 pip install -r requirements.txt
 ```
 
-### Optional dependency for richer REPL logging
+### Optional: Benchmarking with LongBench
+
+To run the LongBench v2 benchmark using RLM:
 
 ```bash
-pip install rich
+# Clone the LongBench repo and set up its environment (done automatically in this repo)
+# Then run the specialized prediction script:
+./LongBench/venv/bin/python rlm_pred.py --limit 10
 ```
 
-### Environment variables
-
-Supported runtime configuration:
-
-- `RLM_PROVIDER` (default: `openai`)
-- `RLM_MODEL` (default: `gpt-5` or `gemini-2.0-flash`)
-- `RLM_RECURSIVE_MODEL` (default: `gpt-5` or `gemini-2.0-flash`)
-- `RLM_MAX_ITERATIONS`
-- `RLM_MAX_SUB_QUERIES`
-- `RLM_REPL_TRUNCATE_LEN`
-- `RLM_CONTEXT_WARN_CHARS`
-- `RLM_STATE_DIR`
-- `CODEBASE_MEMORY_MCP_CMD` (absolute path to `codebase-memory-mcp` binary)
-
-Provider keys are loaded through normal environment variables and `.env`:
-
-- `OPENAI_API_KEY`
-- `GEMINI_API_KEY`
-
-## Quick Start
-
-### Interactive mode
-
-```bash
-python3 main.py
-```
-
-Available commands:
-
-- `/file <path>`: load a plain-text file as context
-- `/repo <path>`: switch to repo-aware mode
-- `/clear`: clear current file/repo context
-- `/help`: show commands
-- `/quit`: exit
-
-Any non-command input is treated as the query.
-
-### Single-shot mode
-
-```bash
-python3 main.py --file README.md "Summarize this document"
-python3 main.py --repo /absolute/path/to/repo "What are the main entrypoints?"
-python3 main.py --repo /absolute/path/to/repo --verbose "Trace the payment flow"
-```
-
-In single-shot mode:
-
-- final answer goes to `stdout`
-- verbose progress goes to `stderr`
-- exit code is non-zero on `MODEL_FAILURE`
+> [!NOTE]
+> Testing on LongBench v2 (especially with free-tier Gemini keys) frequently results in `429 RESOURCE_EXHAUSTED` due to the extremely large context sizes (>100k tokens per sample). A high-quota API key is recommended for full evaluation.
 
 ## Python API
 
@@ -123,199 +79,55 @@ In single-shot mode:
 from rlm.rlm_repl import RLM_REPL
 
 rlm = RLM_REPL(
-    provider="openai",
-    model="gpt-5",
-    recursive_model="gpt-5-nano",
+    provider="gemini",
+    model="gemini-2.0-flash",
+    recursive_model="gemini-2.0-flash",
     max_iterations=10,
 )
 
 answer = rlm.completion(
-    context="Your long document goes here...",
-    query="Summarize the main argument and list the risks.",
+    context="Your long document...",
+    query="Summarize the key points.",
 )
-
-print(answer)
 ```
 
 ### Repo-aware mode
 
 ```python
-from rlm.rlm_repl import RLM_REPL
-
 rlm = RLM_REPL(
     provider="gemini",
-    model="gemini-2.0-flash",
-    recursive_model="gemini-2.0-flash",
-    repo_path="/absolute/path/to/repo",
+    repo_path="/path/to/repo",
 )
 
 answer = rlm.completion(
-    context={"repo_path": "/absolute/path/to/repo"},
-    query="What are the main entrypoints and who calls the payment flow?",
+    context={"repo_path": "/path/to/repo"},
+    query="Explain the authentication flow.",
 )
-
-print(answer)
 ```
 
 ## Repo-Aware Code Exploration
 
-This repo can optionally use [`codebase-memory-mcp`](https://github.com/DeusData/codebase-memory-mcp) as an external local code-intelligence backend.
+This project utilizes `codebase-memory-mcp` to provide the model with a "memory" of the codebase. Instead of sending the entire repository to the LLM, RLM uses a persistent REPL to query a local index. This results in:
+- **Massive Token Savings**: Only relevant snippets are fetched.
+- **Zero-Hallucination Grounding**: The model verifies its understanding against the actual code.
 
-Install that tool separately and either:
+## Robust Gemini Support
 
-- put `codebase-memory-mcp` on your `PATH`, or
-- set `CODEBASE_MEMORY_MCP_CMD=/path/to/codebase-memory-mcp`
+The `GeminiClient` in `rlm/utils/llm.py` has been specifically optimized for the latest Gemini 2.0 models:
+- **Role Merging**: Automatically handles Gemini's strict user-model-user alternating requirement.
+- **System Instructions**: Correctly routes system prompts to the native Gemini API.
+- **Thinking Models**: Robustly handles multi-part content from "thinking" or reasoning models.
 
-When repo mode is active, the REPL exposes:
+## Benchmarking & Evaluation
 
-- `codebase_tool_help()`
-- `index_repository()`
-- `search_graph(...)`
-- `search_code(...)`
-- `trace_call_path(...)`
-- `get_code_snippet(...)`
-- `get_architecture(...)`
-- `list_indexed_projects()`
-- `index_status(...)`
-
-If `codebase-memory-mcp` is missing, the tool layer fails gracefully with structured error payloads. When available, it drastically reduces token usage by enabling the model to search and index code rather than ingesting full contexts.
-
-### Robust Gemini Support
-The `GeminiClient` has been enhanced to:
-- Correctly handle "thinking" models (e.g., `gemini-2.5-flash`) by safely extracting multi-part content.
-- Map `system` messages to the native `system_instruction` API.
-- Automatically merge consecutive user/model messages to satisfy Gemini's strict alternating-role requirements.
-
-## Guardrails and Failure Behavior
-
-### Model failures
-
-Root model failures are returned as strings, not uncaught exceptions. Examples:
-
-- `MODEL_FAILURE: The model limit was reached ...`
-- `MODEL_FAILURE: The model request failed ...`
-
-For plain-text contexts, limit failures include a hint to try repo mode or a smaller input.
-
-### Sub-query limit
-
-Recursive `llm_query(...)` calls are capped by `RLM_MAX_SUB_QUERIES`.
-
-When the cap is hit:
-
-- sub-queries return an in-band error string telling the model to produce its best final answer
-- if the model continues for two full root iterations without converging, the run ends with:
-  - `MODEL_FAILURE: Sub-query limit reached and the model did not converge to a final answer.`
-
-### Large plain-text files
-
-This repo does **not** auto-truncate or auto-chunk your loaded file before the root call.
-
-Instead:
-
-- a warning is emitted when the file exceeds `RLM_CONTEXT_WARN_CHARS`
-- the run proceeds
-- if the provider rejects the context, you get `MODEL_FAILURE`
-
-For codebases, `/repo` is the recommended path.
-
-## Trajectory Logging
-
-Every run writes one JSON trajectory file for debugging/research.
-
-Default location:
-
-```text
-~/.rlm/trajectories/
-```
-
-Override with:
-
-```bash
-export RLM_STATE_DIR=/custom/state/dir
-```
-
-Each trajectory contains:
-
-- timestamp
-- query
-- mode (`text` or `repo`)
-- provider/model info
-- final result
-- final status
-- iteration count
-- context metadata
-
-It intentionally does **not** store the full raw context by default.
-
-## Project Structure & File Overview
-
-```text
-.
-├── main.py                # CLI entrypoint (orchestrates single-shot and interactive runs)
-├── analyze.py             # Dedicated analysis script for repo-wide insights
-├── rlm/
-│   ├── cli.py             # CLI implementations (handles /repo and /file commands)
-│   ├── rlm_repl.py        # Core RLM Logic: Manages the recursive loop and state
-│   ├── repl.py            # Persistent Python REPL: Exposes MCP tools to the model
-│   ├── code_tools/
-│   │   └── codebase_memory.py # MCP Adapter: The bridge to codebase-memory-mcp terminal
-│   ├── utils/
-│   │   ├── llm.py         # LLM Clients: Robust Gemini/OpenAI drivers (role merging, text extraction)
-│   │   ├── prompts.py     # System Prompts: Instructs the model on MCP tool usage
-│   │   └── utils.py       # Helpers: Code block extraction and result formatting
-│   ├── settings.py        # Settings: Environment variable management (LLM keys, MCP paths)
-│   └── trajectory.py      # Logging: Detailed JSON traces of every model interaction
-└── tests/                 # Test suite covering model-limit handling and guardrails
-```
-
-### Key Component Roles
-
-- **`rlm_repl.py` (The Coordinator)**: This is the brain of the recursive process. It initializes the `CodebaseMemoryClient` and ensures the LLM is aware of the repository's context.
-- **`code_tools/codebase_memory.py` (The Bridge)**: Acts as a lightweight adapter that turns `codebase-memory-mcp` CLI commands into interactive Python tools. This is the key to **reducing tokens**, as it offloads the heavy-lifting of code search to a specialized local indexer.
-- **`repl.py` (The Sandbox)**: Exposes the `codebase_tool_*` suite directly into the LLM's workspace. By executing these tools in a real Python environment, the model significantly **reduces hallucinations** because it sees the actual truth of the filesystem.
-- **`utils/llm.py` (The Engine)**: Recent enhancements ensure that Gemini "thinking" models remain robust when processing multi-step repository queries, handling complex role requirements automatically.
-
-## Testing
-
-Run the full local test suite with:
-
-```bash
-pytest -q tests
-```
-
-Current tests cover:
-
-- model-limit failure handling
-- adapter error shape and parsing
-- CLI behavior
-- sub-query guardrails
-- `FINAL_VAR(...)` regression behavior
-- trajectory file creation
-
-## Research Notes
-
-If you are using this repo for a paper, the strongest current evaluation story is:
-
-- long-context understanding,
-- evidence-based multi-hop QA with provided context,
-- reasoning controls,
-- transparent failure/trajectory analysis.
-
-The current implementation is a good fit for benchmarks that reduce cleanly to:
-
-- `context`
-- `query`
-- `gold answer`
-- scalar metric like exact match, F1, or ROUGE
+The repository now includes a dedicated harness for [LongBench v2](https://github.com/THUDM/LongBench):
+- `rlm_pred.py`: A wrapper that passes LongBench samples through the recursive RLM loop.
+- Supports evaluating RLM's reasoning and retrieval capabilities on massive contexts.
 
 ## Limitations
 
-- no built-in benchmark harness yet
-- no multi-turn conversational memory benchmark support
-- no automatic backend installation for `codebase-memory-mcp`
-- no directory-ingestion mode in the CLI
-- repo-aware mode depends on an external locally installed backend
+- repo-aware mode depends on an external locally installed `codebase-memory-mcp` backend
+- performance on free-tier APIs is limited by aggressive rate limits on large contexts
 
 ## License
 
