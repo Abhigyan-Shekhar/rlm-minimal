@@ -56,6 +56,7 @@ It is **not** yet a full agent framework, long-horizon conversational memory sys
 
 ```bash
 pip install -r requirements.txt
+python3 install_tools.py
 ```
 
 ### Optional: Benchmarking with LongBench
